@@ -184,21 +184,21 @@ body.locked nav.tabs,body.locked .dirty{display:none!important}
       <p class="note" style="text-align:center"><a href="#" id="linkForgot">¿Olvidaste tu clave?</a></p>
     </div>
     <div id="paneSetup" class="fgrid" style="grid-template-columns:1fr" hidden>
-      <p class="hint">Primera vez: define el usuario administrador, su clave y el teléfono para verificación SMS.</p>
+      <p class="hint">Primera vez: define el usuario administrador, su clave y el email donde recibirás los códigos de verificación.</p>
       <label class="fl">Usuario<input id="sUser" value="admin" autocomplete="username"></label>
       <label class="fl">Clave (mínimo 8 caracteres)<input id="sPass" type="password" autocomplete="new-password"></label>
-      <label class="fl">Teléfono 2FA<input id="sPhone" type="tel" value="+5698262366"></label>
+      <label class="fl">Email para verificación 2FA<input id="sPhone" type="email" value="juan.ochoa1204@gmail.com"></label>
       <button class="btn btn-pri" id="btnSetup">Crear administrador</button>
     </div>
     <div id="paneForgot" class="fgrid" style="grid-template-columns:1fr" hidden>
       <div id="fgStep1" class="fgrid" style="grid-template-columns:1fr">
-        <p class="hint">Te enviaremos un código SMS al teléfono registrado.</p>
+        <p class="hint">Te enviaremos un código de verificación al email registrado.</p>
         <label class="fl">Usuario<input id="fUser"></label>
-        <button class="btn btn-navy" id="btnFgSend">Enviar código SMS</button>
+        <button class="btn btn-navy" id="btnFgSend">Enviar código</button>
       </div>
       <div id="fgStep2" class="fgrid" style="grid-template-columns:1fr" hidden>
-        <p class="hint">Revisa tu SMS e ingrésalo junto a tu nueva clave.</p>
-        <label class="fl">Código SMS (6 dígitos)<input id="fCode" inputmode="numeric" maxlength="6"></label>
+        <p class="hint">Revisa tu email e ingrésalo junto a tu nueva clave.</p>
+        <label class="fl">Código de verificación (6 dígitos)<input id="fCode" inputmode="numeric" maxlength="6"></label>
         <label class="fl">Nueva clave<input id="fPass1" type="password" autocomplete="new-password"></label>
         <label class="fl">Repite la clave<input id="fPass2" type="password" autocomplete="new-password"></label>
         <button class="btn btn-pri" id="btnFgConfirm">Restablecer clave</button>
@@ -409,7 +409,7 @@ body.locked nav.tabs,body.locked .dirty{display:none!important}
 
 <!-- Modal cambio de clave con 2FA -->
 <div class="overlay" id="ovPass"><div class="modal" role="dialog" aria-modal="true">
-  <h3>Cambiar clave (con verificación SMS)</h3>
+  <h3>Cambiar clave (con verificación por email)</h3>
   <div id="pwStep1" class="fgrid" style="grid-template-columns:1fr">
     <label class="fl">Clave actual<input id="pwCur" type="password" autocomplete="current-password"></label>
     <label class="fl">Nueva clave (mínimo 8)<input id="pwNew1" type="password" autocomplete="new-password"></label>
@@ -417,12 +417,12 @@ body.locked nav.tabs,body.locked .dirty{display:none!important}
     <p class="ferr" id="pwErr"></p>
     <div class="row" style="justify-content:flex-end">
       <button class="btn btn-ghost btn-sm" id="pwCancel">Cancelar</button>
-      <button class="btn btn-navy btn-sm" id="pwSend">Enviar código SMS</button>
+      <button class="btn btn-navy btn-sm" id="pwSend">Enviar código al email</button>
     </div>
   </div>
   <div id="pwStep2" class="fgrid" style="grid-template-columns:1fr" hidden>
     <p class="hint" id="pwSentTo">Código enviado por SMS.</p>
-    <label class="fl">Código SMS (6 dígitos)<input id="pwCode" inputmode="numeric" maxlength="6"></label>
+    <label class="fl">Código de verificación (6 dígitos)<input id="pwCode" inputmode="numeric" maxlength="6"></label>
     <p class="ferr" id="pwErr2"></p>
     <div class="row" style="justify-content:flex-end">
       <button class="btn btn-ghost btn-sm" id="pwBack">Atrás</button>
@@ -925,7 +925,7 @@ $("#aPass").addEventListener("keydown",e=>{if(e.key==="Enter")$("#btnLogin").cli
 $("#btnSetup").onclick=async()=>{
   authErr("");
   try{
-    const r=await authCall("setup",{username:$("#sUser").value,password:$("#sPass").value,phone:$("#sPhone").value});
+    const r=await authCall("setup",{username:$("#sUser").value,password:$("#sPass").value,contact:$("#sPhone").value});
     enterApp({username:r.username},r.token);
   }catch(e){authErr(e.message);}
 };
@@ -933,7 +933,7 @@ $("#linkForgot").onclick=e=>{e.preventDefault();showGate("paneForgot");$("#fgSte
 $("#linkBackLogin").onclick=e=>{e.preventDefault();showGate("paneLogin");};
 $("#btnFgSend").onclick=async()=>{
   authErr("");
-  try{await authCall("request-reset",{username:$("#fUser").value});$("#fgStep1").hidden=true;$("#fgStep2").hidden=false;toast("Si el usuario existe, llegará un SMS","ok");}
+  try{await authCall("request-reset",{username:$("#fUser").value});$("#fgStep1").hidden=true;$("#fgStep2").hidden=false;toast("Si el usuario existe, llegará un email","ok");}
   catch(e){authErr(e.message);}
 };
 $("#btnFgConfirm").onclick=async()=>{
@@ -954,7 +954,7 @@ $("#pwSend").onclick=async()=>{
   if($("#pwNew1").value!==$("#pwNew2").value){pwErr("Las claves nuevas no coinciden.");return;}
   try{
     const r=await authCall("change-request",{current_password:$("#pwCur").value,new_password:$("#pwNew1").value});
-    $("#pwSentTo").textContent="Código enviado por SMS al "+(r.to||"teléfono registrado")+". Vigencia 10 minutos.";
+    $("#pwSentTo").textContent="Código enviado al "+(r.to||"email registrado")+". Vigencia 10 minutos.";
     $("#pwStep1").hidden=true;$("#pwStep2").hidden=false;setTimeout(()=>$("#pwCode").focus(),50);
   }catch(e){pwErr(e.message);}
 };

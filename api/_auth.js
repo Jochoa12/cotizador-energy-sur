@@ -37,12 +37,14 @@ function validPassword(pw) {
   return typeof pw === 'string' && pw.length >= 8 && pw.length <= 128;
 }
 
-// Normaliza a E.164 chileno: "9 9826 2366" → "+56998262366"
-function normalizePhone(raw) {
-  const d = String(raw || '').replace(/\D/g, '');
+// Contacto 2FA: acepta email (canal actual) o teléfono E.164 (canal futuro).
+// La columna app_users.phone guarda este contacto (ver db/002_auth.sql).
+function normalizeContact(raw) {
+  const v = String(raw || '').trim();
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return v.toLowerCase();
+  const d = v.replace(/\D/g, '');
   if (/^569\d{8}$/.test(d)) return '+' + d;
   if (/^9\d{8}$/.test(d)) return '+56' + d;
-  if (/^\+\d{8,15}$/.test(String(raw || '').trim())) return String(raw).trim();
   return null;
 }
 
@@ -82,7 +84,7 @@ function bad(msg, status) {
 }
 
 module.exports = {
-  hashPassword, verifyPassword, sha256, newCode, validPassword, normalizePhone,
+  hashPassword, verifyPassword, sha256, newCode, validPassword, normalizeContact,
   getSessionUser, requireAuth, createSession, bad,
   MAX_LOGIN_FAILS, LOCK_MINUTES
 };

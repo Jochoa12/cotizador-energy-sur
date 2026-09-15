@@ -1,4 +1,4 @@
-// Autenticación y administración de clave con 2FA por SMS.
+// Autenticación y administración de clave con 2FA por EMAIL.
 // GET  /api/auth?action=status          → {setup_required, sms_mode} (público)
 // POST /api/auth?action=setup           → {username,password,phone} solo si no hay usuarios (público)
 // POST /api/auth?action=login           → {username,password} → {token,username} (público)
@@ -10,10 +10,10 @@
 // POST /api/auth?action=verify-reset    → {username,code,new_password} (público)
 const { sql, ok, fail, readBody } = require('./_db');
 const {
-  hashPassword, verifyPassword, sha256, bad, normalizePhone, validPassword,
+  hashPassword, verifyPassword, sha256, newCode, bad, normalizeContact, validPassword,
   requireAuth, createSession, MAX_LOGIN_FAILS, LOCK_MINUTES
 } = require('./_auth');
-const { smsMode, sendCode, checkCodeRemote } = require('./_sms');
+const { mailMode, sendCode } = require('./_notify');
 
 const OTP_TTL_MIN = 10;
 const OTP_MAX_ATTEMPTS = 5;
@@ -39,18 +39,23 @@ async function consumeOtp(s, row, inputCode) {
     await s`UPDATE otp_codes SET used = true WHERE id = ${row.id}`;
     throw bad('Demasiados intentos. Pide un código nuevo.', 429);
   }
-  let valid;
-  if (smsMode() === 'twilio') {
-    valid = await checkCodeRemote(row.phone, inputCode);
-  } else {
-    valid = sha256(String(inputCode).trim()) === row.code_hash;
-  }
+  const valid = sha256(String(inputCode).trim()) === row.code_hash;
   if (!valid) {
     await s`UPDATE otp_codes SET attempts = attempts + 1 WHERE id = ${row.id}`;
     throw bad('Código incorrecto.');
   }
   await s`UPDATE otp_codes SET used = true WHERE id = ${row.id}`;
   return row;
+}
+
+// Enmascara el contacto para mostrarlo en UI sin exponerlo completo.
+function maskContact(c) {
+  const v = String(c || '');
+  if (v.includes('@')) {
+    const parts = v.split('@');
+    return (parts[0].slice(0, 2) + '***@' + parts[1]);
+  }
+  return v.replace(/(\+\d{2})(\d{2})(\d{3})(\d{3})/, '$1 $2 $3 $4');
 }
 
 async function applyNewPassword(s, userId, newHash) {
@@ -67,7 +72,7 @@ module.exports = async (req, res) => {
 
     if (req.method === 'GET' && action === 'status') {
       const r = await s`SELECT count(*)::int AS n FROM app_users`;
-      return ok(res, { setup_required: r[0].n === 0, sms_mode: smsMode() });
+      return ok(res, { setup_required: r[0].n === 0, notify_mode: mailMode() });
     }
 
     if (req.method === 'GET' && action === 'me') {
@@ -80,12 +85,12 @@ module.exports = async (req, res) => {
       if (n[0].n > 0) throw bad('El sistema ya tiene un administrador.', 403);
       const b = await readBody(req);
       const username = String(b.username || '').trim().toLowerCase();
-      const phone = normalizePhone(b.phone);
+      const contact = normalizeContact(b.contact !== undefined ? b.contact : b.phone);
       if (username.length < 3) throw bad('Usuario mínimo 3 caracteres.');
       if (!validPassword(b.password)) throw bad('La clave debe tener al menos 8 caracteres.');
-      if (!phone) throw bad('Teléfono inválido. Usa formato +56912345678.');
+      if (!contact) throw bad('Email 2FA inválido. Usa tu correo (ej: usuario@correo.cl).');
       const ins = await s`INSERT INTO app_users (username, phone, password_hash)
-        VALUES (${username}, ${phone}, ${hashPassword(b.password)}) RETURNING id`;
+        VALUES (${username}, ${contact}, ${hashPassword(b.password)}) RETURNING id`;
       const token = await createSession(ins[0].id);
       return ok(res, { token, username });
     }
@@ -132,13 +137,13 @@ module.exports = async (req, res) => {
       if (!validPassword(b.new_password)) throw bad('La nueva clave debe tener al menos 8 caracteres.');
       if (String(b.new_password) === String(b.current_password)) throw bad('La nueva clave debe ser distinta.');
       await checkOtpRate(s, me.phone);
-      const sent = await sendCode(me.phone);
+      const code = newCode();
+      await sendCode(me.phone, code);
       await s`INSERT INTO otp_codes (user_id, phone, code_hash, payload, expires_at)
-        VALUES (${me.id}, ${me.phone},
-                ${sent.mode === 'local' ? sha256(sent.code) : ''},
+        VALUES (${me.id}, ${me.phone}, ${sha256(code)},
                 ${JSON.stringify({ kind: 'change', new_hash: hashPassword(b.new_password) })},
                 now() + (${OTP_TTL_MIN} * interval '1 minute'))`;
-      return ok(res, { sent: true, to: me.phone.replace(/(\+\d{2})(\d{2})(\d{3})(\d{3})/, '$1 $2 $3 $4') });
+      return ok(res, { sent: true, to: maskContact(me.phone) });
     }
 
     if (req.method === 'POST' && action === 'change-confirm') {
@@ -159,14 +164,14 @@ module.exports = async (req, res) => {
       if (rows[0]) {
         try {
           await checkOtpRate(s, rows[0].phone);
-          const sent = await sendCode(rows[0].phone);
+          const code = newCode();
+          await sendCode(rows[0].phone, code);
           await s`INSERT INTO otp_codes (user_id, phone, code_hash, payload, expires_at)
-            VALUES (${rows[0].id}, ${rows[0].phone},
-                    ${sent.mode === 'local' ? sha256(sent.code) : ''},
+            VALUES (${rows[0].id}, ${rows[0].phone}, ${sha256(code)},
                     ${JSON.stringify({ kind: 'reset' })},
                     now() + (${OTP_TTL_MIN} * interval '1 minute'))`;
         } catch {
-          // Si falla el SMS o el rate limit, igual se responde genérico.
+          // Si falla el envío o el rate limit, igual se responde genérico.
         }
       }
       return ok(res, { sent: true });

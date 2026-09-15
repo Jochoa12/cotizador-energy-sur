@@ -5,6 +5,7 @@
 // PUT    /api/quotes?id=UUID                    → actualizar (reemplaza líneas)
 // DELETE /api/quotes?id=UUID                    → eliminar (cascada a líneas)
 const { sql, ok, fail, readBody } = require('./_db');
+const { requireAuth } = require('./_auth');
 
 const ESTADOS = ['Borrador', 'Enviada', 'Aprobada', 'Rechazada'];
 
@@ -107,6 +108,7 @@ function bad(msg) {
 module.exports = async (req, res) => {
   try {
     const s = sql();
+    await requireAuth(req); // historial y guardado exigen sesión
 
     if (req.method === 'GET') {
       const qq = String(req.query.q || '');

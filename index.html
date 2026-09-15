@@ -141,9 +141,20 @@ kbd{background:#111;color:#fff;border-radius:6px;padding:1px 7px;font-size:.75re
 .stat b{font-size:1.2rem;display:block}
 .stat span{font-size:.75rem;color:var(--mut);font-weight:700;text-transform:uppercase}
 footer.app{max-width:1240px;margin:0 auto;padding:0 16px 110px;color:var(--mut);font-size:.78rem}
+/* ===== Auth gate ===== */
+#authGate{display:none;min-height:calc(100vh - 70px);align-items:center;justify-content:center;background:var(--navy);padding:24px 16px}
+body.locked #authGate{display:flex}
+body.locked main,body.locked .floatbar,body.locked footer.app{display:none}
+body.locked nav.tabs,body.locked .dirty{display:none!important}
+.login-card{background:#fff;border-radius:18px;border:3px solid #111;max-width:400px;width:100%;padding:24px;display:grid;gap:10px;box-shadow:6px 6px 0 #000}
+.login-card img{height:56px;width:auto;justify-self:center}
+.login-card h1{font-size:1.3rem;font-weight:900;text-align:center}
+.login-card .hint{text-align:center}
+.login-card a{color:var(--blue);font-weight:700}
+.userchip{color:#FFD9AE;font-weight:800;font-size:.85rem;white-space:nowrap}
 </style>
 </head>
-<body>
+<body class="locked">
 <header class="appbar">
   <div class="appbar-in">
     <div class="brand"><img class="brand-logo" src="images/logo.png" alt="Logo Energy Sur SpA" onerror="this.style.display='none'"><div><b>Energy Sur SpA</b><small>COTIZADOR · TABLEROS</small></div></div>
@@ -153,9 +164,49 @@ footer.app{max-width:1240px;margin:0 auto;padding:0 16px 110px;color:var(--mut);
       <button role="tab" data-view="admin" aria-selected="false">⚙ Admin / Catálogo</button>
     </nav>
     <div class="sp"></div>
+    <span class="userchip" id="userChip" hidden></span>
+    <button class="btn btn-ghost btn-sm" id="btnPass" hidden>🔑 Cambiar clave</button>
+    <button class="btn btn-ghost btn-sm" id="btnLogout" hidden>Salir</button>
     <span class="dirty" id="dirtyFlag"></span>
   </div>
 </header>
+
+<div id="authGate">
+  <div class="login-card">
+    <img src="images/logo.png" alt="Energy Sur SpA" onerror="this.style.display='none'">
+    <h1>Cotizador Energy Sur</h1>
+    <p class="hint" id="authSub">Ingresa para continuar</p>
+    <div id="paneLogin" class="fgrid" style="grid-template-columns:1fr">
+      <label class="fl">Usuario<input id="aUser" autocomplete="username"></label>
+      <label class="fl">Clave<input id="aPass" type="password" autocomplete="current-password"></label>
+      <p class="ferr" id="aErr"></p>
+      <button class="btn btn-pri" id="btnLogin">Entrar</button>
+      <p class="note" style="text-align:center"><a href="#" id="linkForgot">¿Olvidaste tu clave?</a></p>
+    </div>
+    <div id="paneSetup" class="fgrid" style="grid-template-columns:1fr" hidden>
+      <p class="hint">Primera vez: define el usuario administrador, su clave y el teléfono para verificación SMS.</p>
+      <label class="fl">Usuario<input id="sUser" value="admin" autocomplete="username"></label>
+      <label class="fl">Clave (mínimo 8 caracteres)<input id="sPass" type="password" autocomplete="new-password"></label>
+      <label class="fl">Teléfono 2FA<input id="sPhone" type="tel" value="+5698262366"></label>
+      <button class="btn btn-pri" id="btnSetup">Crear administrador</button>
+    </div>
+    <div id="paneForgot" class="fgrid" style="grid-template-columns:1fr" hidden>
+      <div id="fgStep1" class="fgrid" style="grid-template-columns:1fr">
+        <p class="hint">Te enviaremos un código SMS al teléfono registrado.</p>
+        <label class="fl">Usuario<input id="fUser"></label>
+        <button class="btn btn-navy" id="btnFgSend">Enviar código SMS</button>
+      </div>
+      <div id="fgStep2" class="fgrid" style="grid-template-columns:1fr" hidden>
+        <p class="hint">Revisa tu SMS e ingrésalo junto a tu nueva clave.</p>
+        <label class="fl">Código SMS (6 dígitos)<input id="fCode" inputmode="numeric" maxlength="6"></label>
+        <label class="fl">Nueva clave<input id="fPass1" type="password" autocomplete="new-password"></label>
+        <label class="fl">Repite la clave<input id="fPass2" type="password" autocomplete="new-password"></label>
+        <button class="btn btn-pri" id="btnFgConfirm">Restablecer clave</button>
+      </div>
+      <p class="note" style="text-align:center"><a href="#" id="linkBackLogin">Volver al ingreso</a></p>
+    </div>
+  </div>
+</div>
 
 <main>
   <!-- ============ VIEW: NUEVA ============ -->
@@ -356,6 +407,30 @@ footer.app{max-width:1240px;margin:0 auto;padding:0 16px 110px;color:var(--mut);
   </div>
 </div></div>
 
+<!-- Modal cambio de clave con 2FA -->
+<div class="overlay" id="ovPass"><div class="modal" role="dialog" aria-modal="true">
+  <h3>Cambiar clave (con verificación SMS)</h3>
+  <div id="pwStep1" class="fgrid" style="grid-template-columns:1fr">
+    <label class="fl">Clave actual<input id="pwCur" type="password" autocomplete="current-password"></label>
+    <label class="fl">Nueva clave (mínimo 8)<input id="pwNew1" type="password" autocomplete="new-password"></label>
+    <label class="fl">Repite la nueva clave<input id="pwNew2" type="password" autocomplete="new-password"></label>
+    <p class="ferr" id="pwErr"></p>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" id="pwCancel">Cancelar</button>
+      <button class="btn btn-navy btn-sm" id="pwSend">Enviar código SMS</button>
+    </div>
+  </div>
+  <div id="pwStep2" class="fgrid" style="grid-template-columns:1fr" hidden>
+    <p class="hint" id="pwSentTo">Código enviado por SMS.</p>
+    <label class="fl">Código SMS (6 dígitos)<input id="pwCode" inputmode="numeric" maxlength="6"></label>
+    <p class="ferr" id="pwErr2"></p>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" id="pwBack">Atrás</button>
+      <button class="btn btn-pri btn-sm" id="pwConfirm">Confirmar cambio</button>
+    </div>
+  </div>
+</div></div>
+
 <!-- Modal WhatsApp -->
 <div class="overlay" id="ovWA"><div class="modal" role="dialog" aria-modal="true">
   <h3>Revisar y enviar por WhatsApp</h3>
@@ -437,8 +512,11 @@ let editingId=null, dirty=false, editLineId=null, confirmCb=null, prodEditId=nul
    Si no hay API (file:// o sin red), todo sigue funcionando en localStorage. */
 const SRV={ok:false,boards:[],categories:[]};
 async function sapi(path,method,body){
-  const r=await fetch(path,{method:method||"GET",headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});
-  if(!r.ok)throw new Error("API "+r.status);
+  const h={"Content-Type":"application/json"};
+  if(AUTH.token)h.Authorization="Bearer "+AUTH.token;
+  const r=await fetch(path,{method:method||"GET",headers:h,body:body?JSON.stringify(body):undefined});
+  if(r.status===401&&!path.startsWith("/api/auth")){forceLogout();throw new Error("Sesión expirada. Ingresa de nuevo.");}
+  if(!r.ok){let m="Error "+r.status;try{m=(await r.json()).error||m;}catch(e){}throw new Error(m);}
   return r.json();
 }
 function payloadOf(q,firma){
@@ -801,6 +879,91 @@ $("#btnSaveCfg").onclick=()=>{
   CFG={iva,moneda:$("#cfgMon").value,empresa:$("#cfgEmp").value,direccion:$("#cfgDir").value,telefono:$("#cfgTel").value,email:$("#cfgMail").value,tipos:$("#cfgTipos").value.split("\n").map(s=>s.trim()).filter(Boolean),condiciones:$("#cfgCond").value};
   LS.set("esur_cfg",CFG);Q.ivaPct=CFG.iva;renderCfg();renderHead();renderSummary();syncConfigToServer();toast("Configuración guardada","ok");
 };
+/* ---------- Autenticación (login + 2FA SMS) ---------- */
+const AUTH={token:sessionStorage.getItem("esur_token")||"",user:null};
+async function authCall(action,body,method){
+  const h={"Content-Type":"application/json"};
+  if(AUTH.token)h.Authorization="Bearer "+AUTH.token;
+  const r=await fetch("/api/auth?action="+encodeURIComponent(action),{method:method||"POST",headers:h,body:body?JSON.stringify(body):undefined});
+  if(!r.ok){let m="Error";try{m=(await r.json()).error||m;}catch(e){}throw new Error(m);}
+  return r.json();
+}
+function authErr(m){const e=$("#aErr");e.textContent=m||"";e.style.display=m?"block":"none";}
+function showGate(pane){document.body.classList.add("locked");["paneLogin","paneSetup","paneForgot"].forEach(p=>{document.getElementById(p).hidden=(p!==pane);});authErr("");}
+function unlockApp(){document.body.classList.remove("locked");}
+function setUser(me){AUTH.user=me;$("#userChip").textContent="👤 "+me.username;["userChip","btnPass","btnLogout"].forEach(id=>{document.getElementById(id).hidden=false;});}
+function forceLogout(){AUTH.token="";AUTH.user=null;SRV.ok=false;try{sessionStorage.removeItem("esur_token");}catch(e){}["userChip","btnPass","btnLogout"].forEach(id=>{document.getElementById(id).hidden=true;});showGate("paneLogin");}
+async function enterApp(me,token){
+  if(token){AUTH.token=token;try{sessionStorage.setItem("esur_token",token);}catch(e){}}
+  setUser(me);unlockApp();toast("Bienvenido, "+me.username,"ok");bootSync();
+}
+async function authBoot(){
+  renderCfg();
+  const draft=LS.get("esur_draft",null);
+  Q=draft&&draft.lineas?draft:blankQuote();
+  if(!Q.ivaPct)Q.ivaPct=CFG.iva;
+  renderAll();renderHistory();markDirty(!!draft);
+  try{
+    const st=await authCall("status",null,"GET");
+    if(st.setup_required){$("#authSub").textContent="Configuración inicial del administrador";showGate("paneSetup");return;}
+    if(AUTH.token){
+      try{const me=await authCall("me",null,"GET");setUser(me);unlockApp();bootSync();return;}
+      catch(e){AUTH.token="";try{sessionStorage.removeItem("esur_token");}catch(_){}}
+    }
+    showGate("paneLogin");
+  }catch(e){showGate("paneLogin");}
+}
+$("#btnLogin").onclick=async()=>{
+  authErr("");
+  try{
+    const r=await authCall("login",{username:$("#aUser").value,password:$("#aPass").value});
+    $("#aPass").value="";enterApp({username:r.username},r.token);
+    if(r.must_change_password)toast("Debes actualizar tu clave","err");
+  }catch(e){authErr(e.message);}
+};
+$("#aPass").addEventListener("keydown",e=>{if(e.key==="Enter")$("#btnLogin").click();});
+$("#btnSetup").onclick=async()=>{
+  authErr("");
+  try{
+    const r=await authCall("setup",{username:$("#sUser").value,password:$("#sPass").value,phone:$("#sPhone").value});
+    enterApp({username:r.username},r.token);
+  }catch(e){authErr(e.message);}
+};
+$("#linkForgot").onclick=e=>{e.preventDefault();showGate("paneForgot");$("#fgStep1").hidden=false;$("#fgStep2").hidden=true;};
+$("#linkBackLogin").onclick=e=>{e.preventDefault();showGate("paneLogin");};
+$("#btnFgSend").onclick=async()=>{
+  authErr("");
+  try{await authCall("request-reset",{username:$("#fUser").value});$("#fgStep1").hidden=true;$("#fgStep2").hidden=false;toast("Si el usuario existe, llegará un SMS","ok");}
+  catch(e){authErr(e.message);}
+};
+$("#btnFgConfirm").onclick=async()=>{
+  authErr("");
+  if($("#fPass1").value!==$("#fPass2").value){authErr("Las claves no coinciden.");return;}
+  try{await authCall("verify-reset",{username:$("#fUser").value,code:$("#fCode").value,new_password:$("#fPass1").value});
+    showGate("paneLogin");toast("Clave restablecida. Ingresa con tu nueva clave.","ok");}
+  catch(e){authErr(e.message);}
+};
+$("#btnLogout").onclick=async()=>{try{await authCall("logout",{});}catch(e){}forceLogout();};
+function pwErr(m){const e=$("#pwErr");e.textContent=m||"";e.style.display=m?"block":"none";}
+function pwErr2(m){const e=$("#pwErr2");e.textContent=m||"";e.style.display=m?"block":"none";}
+$("#btnPass").onclick=()=>{$("#pwStep1").hidden=false;$("#pwStep2").hidden=true;pwErr("");pwErr2("");$("#pwCur").value="";$("#pwNew1").value="";$("#pwNew2").value="";$("#pwCode").value="";$("#ovPass").classList.add("open");};
+$("#pwCancel").onclick=()=>$("#ovPass").classList.remove("open");
+$("#pwBack").onclick=()=>{$("#pwStep1").hidden=false;$("#pwStep2").hidden=true;};
+$("#pwSend").onclick=async()=>{
+  pwErr("");
+  if($("#pwNew1").value!==$("#pwNew2").value){pwErr("Las claves nuevas no coinciden.");return;}
+  try{
+    const r=await authCall("change-request",{current_password:$("#pwCur").value,new_password:$("#pwNew1").value});
+    $("#pwSentTo").textContent="Código enviado por SMS al "+(r.to||"teléfono registrado")+". Vigencia 10 minutos.";
+    $("#pwStep1").hidden=true;$("#pwStep2").hidden=false;setTimeout(()=>$("#pwCode").focus(),50);
+  }catch(e){pwErr(e.message);}
+};
+$("#pwConfirm").onclick=async()=>{
+  pwErr2("");
+  try{await authCall("change-confirm",{code:$("#pwCode").value});
+    $("#ovPass").classList.remove("open");forceLogout();toast("Clave actualizada. Ingresa de nuevo.","ok");}
+  catch(e){pwErr2(e.message);}
+};
 /* ---------- Navegación ---------- */
 function switchView(v){$$("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.view===v?"true":"false"));$$(".view").forEach(s=>s.classList.toggle("active",s.id==="view-"+v));if(v==="historial")renderHistory();if(v==="admin"){renderCat();renderCfg();}window.scrollTo({top:0});}
 $$("nav.tabs button").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
@@ -812,12 +975,7 @@ document.addEventListener("keydown",e=>{
 });
 /* ---------- Init ---------- */
 (function init(){
-  renderCfg();
-  const draft=LS.get("esur_draft",null);
-  Q=draft&&draft.lineas?draft:blankQuote();
-  if(!Q.ivaPct)Q.ivaPct=CFG.iva;
-  renderAll();renderHistory();markDirty(!!draft);
-  bootSync(); // hidrata desde Neon si hay API; si no, sigue 100% local
+  authBoot(); // gate de login → hidrata desde Neon (o sigue local si no hay API)
   // Verificación determinista del ejemplo del requerimiento §31:
   try{const t=[{precio_unitario:35500,cantidad:2,total:0},{precio_unitario:50000,cantidad:1,total:0},{precio_unitario:23000,cantidad:1,total:0}];const qq={lineas:t,ivaPct:19};const c=calc(qq);console.assert(c.neto===144000&&c.iva===27360&&c.total===171360,"Regla §31 OK",c);
   // Verificación búsqueda inteligente (punto 6):

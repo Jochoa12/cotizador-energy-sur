@@ -5,6 +5,7 @@
 // PUT    /api/products?id=UUID            → actualizar / activar-desactivar
 // DELETE /api/products?id=UUID            → desactivar (soft delete)
 const { sql, ok, fail, readBody } = require('./_db');
+const { requireAuth } = require('./_auth');
 
 const SELECT = `
   SELECT p.id, p.reference, p.description, c.name AS category,
@@ -27,6 +28,7 @@ async function categoryId(s, name) {
 module.exports = async (req, res) => {
   try {
     const s = sql();
+    await requireAuth(req); // todo el catálogo exige sesión
 
     if (req.method === 'GET') {
       const q = String(req.query.q || '').trim();

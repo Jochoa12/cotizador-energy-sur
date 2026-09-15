@@ -3,10 +3,12 @@
 // POST /api/config → {scope:'board_type'|'category', name} crear
 //                    {scope:'board_type'|'category', id, active} activar/desactivar
 const { sql, ok, fail, readBody } = require('./_db');
+const { requireAuth } = require('./_auth');
 
 module.exports = async (req, res) => {
   try {
     const s = sql();
+    await requireAuth(req); // configuración exige sesión
 
     if (req.method === 'GET') {
       const settings = await s`SELECT key, value FROM app_settings`;

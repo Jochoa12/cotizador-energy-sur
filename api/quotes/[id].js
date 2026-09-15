@@ -1,9 +1,11 @@
 // GET /api/quotes/:id → cotización completa (cliente + líneas) para Ver/Editar/PDF.
 const { sql, ok, fail } = require('../_db');
+const { requireAuth } = require('../_auth');
 
 module.exports = async (req, res) => {
   try {
     const s = sql();
+    await requireAuth(req);
     const id = String(req.query.id || '');
     if (!id) {
       const e = new Error('id requerido');

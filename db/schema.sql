@@ -228,7 +228,7 @@ ON CONFLICT (name) DO NOTHING;
 
 -- Catálogo Excel (reference, description, category, price, unit, tags)
 INSERT INTO products (reference, description, category_id, price, unit, tags)
-SELECT * FROM (VALUES
+SELECT v.reference, v.description, c.id, v.price, v.unit, v.tags FROM (VALUES
   ('409258','LEX³/ITM 3X40A DX³C-10/16KA','Materiales',50000,'c/u','interruptor termomagnetico automatico trifasico riel din'),
   ('004886','LEX/REPART.TETR125A 86X44X105M','Materiales',23000,'c/u','repartidor tetrapolar distribucion barras'),
   ('407670','LEX3/ITM 1X16A DX3C-6/10KA','Materiales',12450,'c/u','interruptor termomagnetico automatico monofasico enchufe alumbrado'),

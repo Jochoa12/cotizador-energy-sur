@@ -1,0 +1,9 @@
+{
+  "name": "cotizador-energy-sur",
+  "private": true,
+  "version": "1.2.0",
+  "description": "Cotizador Energy Sur SpA: frontend estatico + Vercel Functions + Neon Postgres",
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.0"
+  }
+}

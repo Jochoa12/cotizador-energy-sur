@@ -372,7 +372,7 @@ footer.app{max-width:1240px;margin:0 auto;padding:0 16px 110px;color:var(--mut);
 <div id="toasts" aria-live="polite"></div>
 <div id="printArea" aria-hidden="true"></div>
 
-<footer class="app noprint">Energy Sur SpA · Cotizador v1.1 · Neto = Σ(precio×cant) · IVA parametrizable · Totales recalculados en backend al guardar (regla: no confiar en cálculos del cliente). Datos locales en este equipo.</footer>
+<footer class="app noprint">Energy Sur SpA · Cotizador v1.2 · Neto = Σ(precio×cant) · IVA parametrizable · Totales calculados en Neon (no se confía en el frontend) · Caché local + sync servidor.</footer>
 
 <script>
 "use strict";
@@ -430,6 +430,91 @@ let CFG={...DEFAULT_CFG,...(LS.get("esur_cfg",{}))};
 let QUOTES=LS.get("esur_quotes",[]);
 let SEQ=LS.get("esur_seq",110326);
 let editingId=null, dirty=false, editLineId=null, confirmCb=null, prodEditId=null, sigDrawn=false;
+
+/* ---------- Sync Neon (persistencia en servidor; fallback local si falla) ----------
+   Estrategia: la UI sigue operando sobre CAT/CFG/QUOTES locales; al iniciar se
+   hidratan desde /api/* y cada escritura se replica al servidor (write-through).
+   Si no hay API (file:// o sin red), todo sigue funcionando en localStorage. */
+const SRV={ok:false,boards:[],categories:[]};
+async function sapi(path,method,body){
+  const r=await fetch(path,{method:method||"GET",headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});
+  if(!r.ok)throw new Error("API "+r.status);
+  return r.json();
+}
+function payloadOf(q,firma){
+  return {cliente:{nombre:q.cliente,empresa:q.empresa,contacto:q.contacto,email:q.email,telefono:q.telefono,direccion:q.direccion},
+    proyecto:q.proyecto,tipo_tablero:q.tipo_tablero,estado:q.estado,vendedor:q.vendedor,obs:q.obs||"",
+    firma:firma===undefined?q.firma:firma,fecha:q.fecha,
+    lineas:q.lineas.map(l=>{const m=String(l.producto_id||"").match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+      return {producto_id:m?m[0]:null,referencia:l.referencia||"",descripcion:l.descripcion,precio_unitario:l.precio_unitario,cantidad:l.cantidad,categoria:l.categoria||"Materiales"};})};
+}
+function fromSrvQuote(x){
+  return {id:"q"+Date.now().toString(36)+Math.floor(Math.random()*999),srv_id:x.srv_id,numero:String(x.numero),fecha:String(x.fecha||"").slice(0,10),
+    cliente:x.cliente||"",empresa:x.empresa||"",contacto:x.contacto||"",email:x.email||"",telefono:x.telefono||"",direccion:x.direccion||"",
+    proyecto:x.proyecto||"",tipo_tablero:x.tipo_tablero||"",estado:x.estado||"Borrador",vendedor:x.vendedor||"",obs:x.obs||"",firma:x.firma||null,
+    ivaPct:Number(x.ivaPct??19),neto:x.neto||0,iva:x.iva||0,total:x.total||0,
+    lineas:(x.lineas||[]).map((l,i)=>({id:"l"+Date.now().toString(36)+i,producto_id:l.producto_id||null,referencia:l.referencia||"",descripcion:l.descripcion,precio_unitario:l.precio_unitario,cantidad:l.cantidad,total:l.precio_unitario*l.cantidad,categoria:l.categoria||"Materiales"})),
+    created_at:x.created_at,updated_at:x.updated_at};
+}
+async function bootSync(){
+  try{
+    const [cfg,prods,data]=await Promise.all([sapi("/api/config"),sapi("/api/products?all=1"),sapi("/api/quotes?limit=200")]);
+    CFG={...CFG,iva:Number(cfg.iva??CFG.iva),moneda:cfg.currency||CFG.moneda,condiciones:cfg.conditions||CFG.condiciones,
+      empresa:(cfg.company&&cfg.company.name)||CFG.empresa,direccion:(cfg.company&&cfg.company.address)||CFG.direccion,
+      telefono:(cfg.company&&cfg.company.phone)||CFG.telefono,email:(cfg.company&&cfg.company.email)||CFG.email,
+      tipos:(cfg.board_types&&cfg.board_types.length?cfg.board_types:CFG.tipos)};
+    SRV.boards=cfg.board_types||[];SRV.categories=cfg.categories||[];
+    const pendingProds=CAT.filter(p=>p.pending);
+    CAT=prods.map(p=>({id:"srv_"+p.id,referencia:p.referencia,descripcion:p.descripcion,categoria:p.categoria,precio:p.precio,unidad:p.unidad||"c/u",tags:p.tags||"",activo:p.activo}));
+    const pendingQuotes=QUOTES.filter(q=>!q.srv_id);
+    QUOTES=(data.quotes||[]).map(fromSrvQuote);
+    for(const p of pendingProds){try{const r=await sapi("/api/products","POST",{referencia:p.referencia,descripcion:p.descripcion,categoria:p.categoria,precio:p.precio,unidad:p.unidad,tags:p.tags||""});CAT.push({id:"srv_"+r.id,referencia:p.referencia,descripcion:p.descripcion,categoria:p.categoria,precio:p.precio,unidad:p.unidad,tags:p.tags||"",activo:true});}catch(e){CAT.push({...p});}}
+    for(const q of pendingQuotes){try{const r=await sapi("/api/quotes","POST",payloadOf(q,q.firma));QUOTES.unshift({...structuredClone(q),srv_id:r.srv_id,numero:String(r.numero),neto:r.neto,iva:r.iva,total:r.total,ivaPct:r.ivaPct});}catch(e){QUOTES.unshift(q);}}
+    const mx=Math.max(110326,...QUOTES.map(x=>parseInt(x.numero)||0));SEQ=mx+1;LS.set("esur_seq",SEQ);
+    LS.set("esur_cat",CAT);LS.set("esur_cfg",CFG);LS.set("esur_quotes",QUOTES);
+    SRV.ok=true;renderCfg();renderAll();renderHistory();
+    $("#saveNote").textContent="Conectado a Neon · "+QUOTES.length+" cotizaciones sincronizadas";
+    toast("Neon conectado · datos sincronizados","ok");
+  }catch(e){SRV.ok=false;}
+}
+async function syncSaveToServer(rec){
+  if(!SRV.ok)return;
+  try{
+    const firma=sigDrawn?cv.toDataURL("image/png"):Q.firma;
+    const r=rec.srv_id?await sapi("/api/quotes?id="+encodeURIComponent(rec.srv_id),"PUT",payloadOf(Q,firma))
+                      :await sapi("/api/quotes","POST",payloadOf(Q,firma));
+    rec.srv_id=r.srv_id;rec.numero=String(r.numero);rec.neto=r.neto;rec.iva=r.iva;rec.total=r.total;rec.ivaPct=r.ivaPct;
+    if(Q.id===rec.id)Q.numero=rec.numero;
+    LS.set("esur_quotes",QUOTES);renderHead();renderSummary();renderHistory();
+    $("#saveNote").textContent="Guardada en Neon "+new Date().toLocaleString("es-CL")+" · Nº "+rec.numero;
+  }catch(e){toast("Guardada local · Neon no disponible","err");}
+}
+async function ensureLines(x){
+  if((!x.lineas||!x.lineas.length)&&SRV.ok&&x.srv_id){
+    try{const d=fromSrvQuote(await sapi("/api/quotes/"+encodeURIComponent(x.srv_id)));
+      x.lineas=d.lineas;x.neto=d.neto;x.iva=d.iva;x.total=d.total;x.ivaPct=d.ivaPct;x.obs=d.obs;x.firma=d.firma;
+      LS.set("esur_quotes",QUOTES);}catch(e){}
+  }
+  return x;
+}
+async function pushProduct(p){
+  if(!SRV.ok)return;
+  try{
+    if(String(p.id).startsWith("srv_")){
+      await sapi("/api/products?id="+encodeURIComponent(String(p.id).slice(4)),"PUT",{referencia:p.referencia,descripcion:p.descripcion,categoria:p.categoria,precio:p.precio,unidad:p.unidad,tags:p.tags||"",activo:p.activo});
+    }else{
+      const r=await sapi("/api/products","POST",{referencia:p.referencia,descripcion:p.descripcion,categoria:p.categoria,precio:p.precio,unidad:p.unidad,tags:p.tags||""});
+      p.id="srv_"+r.id;delete p.pending;persistCat();
+    }
+  }catch(e){toast("Catálogo local · Neon no disponible","err");}
+}
+async function syncConfigToServer(){
+  if(!SRV.ok)return;
+  try{
+    await sapi("/api/config","PUT",{iva:CFG.iva,currency:CFG.moneda,conditions:CFG.condiciones,company:{name:CFG.empresa,address:CFG.direccion,phone:CFG.telefono,email:CFG.email}});
+    for(const t of CFG.tipos){if(!SRV.boards.includes(t)){try{await sapi("/api/config","POST",{scope:"board_type",name:t});SRV.boards.push(t);}catch(e){}}}
+  }catch(e){toast("Config local · Neon no disponible","err");}
+}
 
 let Q=null;
 function blankQuote(){
@@ -588,6 +673,7 @@ function save(silent){
   const i=QUOTES.findIndex(x=>x.id===rec.id);
   if(i>=0)QUOTES[i]=structuredClone(rec);else{QUOTES.unshift(structuredClone(rec));SEQ=Math.max(SEQ,parseInt(rec.numero||"0")+1);LS.set("esur_seq",SEQ);}
   LS.set("esur_quotes",QUOTES);editingId=rec.id;markDirty(false);
+  syncSaveToServer(rec);
   renderHistory();$("#saveNote").textContent="Guardada "+new Date().toLocaleString("es-CL")+" · Nº "+rec.numero;
   if(!silent)toast("Cotización Nº "+rec.numero+" guardada correctamente","ok");
   return true;
@@ -600,6 +686,7 @@ $("#btnGoNew").onclick=()=>{switchView("nueva");$("#btnNew").click();};
 function duplicateCurrent(){
   const n={...structuredClone(Q),id:"q"+Date.now(),numero:String(LS.get("esur_seq",SEQ)),fecha:todayISO(),estado:"Borrador",created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
   n.lineas.forEach(l=>l.id="l"+Date.now()+Math.floor(Math.random()*9999));
+  delete n.srv_id;
   Q=n;editingId=null;markDirty(true);renderAll();toast("Duplicada como Nº "+Q.numero+" (Borrador)","ok");switchView("nueva");
 }
 /* ---------- Firma digital ---------- */
@@ -657,19 +744,19 @@ function renderHistory(){
   $("#countBadge").textContent="("+QUOTES.length+")";
   const q=norm($("#fltQ").value),est=$("#fltEst").value,tipo=$("#fltTipo").value,mes=$("#fltDate").value;
   const list=QUOTES.filter(x=>(!q||norm(x.numero+" "+x.cliente+" "+x.proyecto).includes(q))&&(!est||x.estado===est)&&(!tipo||x.tipo_tablero===tipo)&&(!mes||(x.fecha||"").startsWith(mes)));
-  $("#hbody").innerHTML=list.map(x=>{const c=calc(x);return `<tr class="hrow"><td><b>${esc(x.numero)}</b></td><td>${esc(x.fecha)}</td><td>${esc(x.cliente)}<br><small style="color:var(--mut)">${esc(x.empresa||"")}</small></td><td>${esc(x.proyecto||"—")}</td><td>${esc(x.tipo_tablero)}</td><td style="text-align:right" class="money">${money(c.neto)}</td><td style="text-align:right" class="money">${money(c.total)}</td><td><span class="pill st-${esc(x.estado)}">${esc(x.estado)}</span></td>
+  $("#hbody").innerHTML=list.map(x=>{const c=(x.lineas&&x.lineas.length)?calc(x):{neto:x.neto||0,iva:x.iva||0,total:x.total||0};return `<tr class="hrow"><td><b>${esc(x.numero)}</b></td><td>${esc(x.fecha)}</td><td>${esc(x.cliente)}<br><small style="color:var(--mut)">${esc(x.empresa||"")}</small></td><td>${esc(x.proyecto||"—")}</td><td>${esc(x.tipo_tablero)}</td><td style="text-align:right" class="money">${money(c.neto)}</td><td style="text-align:right" class="money">${money(c.total)}</td><td><span class="pill st-${esc(x.estado)}">${esc(x.estado)}</span></td>
   <td><div class="acts"><button class="iconbtn" data-a="ver" title="Ver/Editar">👁</button><button class="iconbtn" data-a="dup" title="Duplicar">⧉</button><button class="iconbtn" data-a="pdf" title="PDF">🖨</button><button class="iconbtn" data-a="wa" title="WhatsApp">📲</button><button class="iconbtn danger" data-a="del" title="Eliminar">🗑</button></div></td></tr>`;}).join("")||`<tr><td colspan="9" style="text-align:center;color:var(--mut)">Sin cotizaciones con ese filtro.</td></tr>`;
   [...$("#hbody").querySelectorAll("tr")].forEach((tr,i)=>{
     const x=list[i];if(!x)return;const b=a=>tr.querySelector(`[data-a="${a}"]`);
-    b("ver").onclick=()=>{Q=structuredClone(x);editingId=x.id;if(Q.firma){const im=new Image();im.onload=()=>{sigClear();ctx.drawImage(im,0,0,cv.width,cv.height);sigDrawn=true;};im.src=Q.firma;}else sigClear();markDirty(false);renderAll();switchView("nueva");};
-    b("dup").onclick=()=>{Q={...structuredClone(x),id:"q"+Date.now(),numero:String(LS.get("esur_seq",SEQ)),fecha:todayISO(),estado:"Borrador"};editingId=null;markDirty(true);renderAll();switchView("nueva");toast("Duplicada como Nº "+Q.numero,"ok");};
-    b("pdf").onclick=()=>{Q=structuredClone(x);renderAll();doPDF();};
-    b("wa").onclick=()=>{Q=structuredClone(x);renderAll();switchView("nueva");showWA();};
-    b("del").onclick=()=>askConfirm("Eliminar cotización","¿Eliminar definitivamente la cotización Nº "+x.numero+"?",()=>{QUOTES=QUOTES.filter(y=>y.id!==x.id);LS.set("esur_quotes",QUOTES);renderHistory();toast("Cotización eliminada");});
+    b("ver").onclick=async()=>{await ensureLines(x);Q=structuredClone(x);editingId=x.id;if(Q.firma){const im=new Image();im.onload=()=>{sigClear();ctx.drawImage(im,0,0,cv.width,cv.height);sigDrawn=true;};im.src=Q.firma;}else sigClear();markDirty(false);renderAll();switchView("nueva");};
+    b("dup").onclick=()=>{Q={...structuredClone(x),id:"q"+Date.now(),numero:String(LS.get("esur_seq",SEQ)),fecha:todayISO(),estado:"Borrador"};delete Q.srv_id;editingId=null;markDirty(true);renderAll();switchView("nueva");toast("Duplicada como Nº "+Q.numero,"ok");};
+    b("pdf").onclick=async()=>{await ensureLines(x);Q=structuredClone(x);renderAll();doPDF();};
+    b("wa").onclick=async()=>{await ensureLines(x);Q=structuredClone(x);renderAll();switchView("nueva");showWA();};
+    b("del").onclick=()=>askConfirm("Eliminar cotización","¿Eliminar definitivamente la cotización Nº "+x.numero+"?",()=>{QUOTES=QUOTES.filter(y=>y.id!==x.id);LS.set("esur_quotes",QUOTES);if(SRV.ok&&x.srv_id)sapi("/api/quotes?id="+encodeURIComponent(x.srv_id),"DELETE").catch(()=>{});renderHistory();toast("Cotización eliminada");});
   });
   // stats
   const m=todayISO().slice(0,7),inM=QUOTES.filter(x=>(x.fecha||"").startsWith(m));
-  const sum=a=>a.reduce((s,x)=>s+calc(x).total,0);
+  const sum=a=>a.reduce((s,x)=>s+(x.lineas&&x.lineas.length?calc(x).total:(x.total||0)),0);
   $("#stats").innerHTML=[["Cotiz. mes",inM.length],["Pendientes (Borrador+Enviada)",QUOTES.filter(x=>["Borrador","Enviada"].includes(x.estado)).length],["Aprobadas",QUOTES.filter(x=>x.estado==="Aprobada").length],["Monto cotizado mes",money(sum(inM))],["Monto aprobado",money(sum(QUOTES.filter(x=>x.estado==="Aprobada")))],["Últimas",QUOTES.length?("Nº "+QUOTES[0].numero):"—"]].map(([k,v])=>`<div class="stat"><span>${k}</span><b>${v}</b></div>`).join("");
 }
 ["fltQ","fltEst","fltTipo","fltDate"].forEach(id=>document.getElementById(id).addEventListener("input",renderHistory));
@@ -681,7 +768,7 @@ function renderCat(){
   $("#catBody").innerHTML=list.map(p=>`<tr><td style="font-family:var(--mono)">${esc(p.referencia)}</td><td>${esc(p.descripcion)}</td><td>${esc(p.categoria)}</td><td style="text-align:right" class="money">${money(p.precio)}</td><td>${p.activo?"✅":"⏸"}</td><td><div class="row" style="gap:4px;flex-wrap:nowrap"><button class="iconbtn" data-a="e">✎</button><button class="iconbtn" data-a="t">${p.activo?"⏸":"▶"}</button></div></td></tr>`).join("");
   [...$("#catBody").querySelectorAll("tr")].forEach((tr,i)=>{const p=list[i];
     tr.querySelector('[data-a="e"]').onclick=()=>{prodEditId=p.id;$("#pTitle").textContent="Editar producto";$("#pRef").value=p.referencia;$("#pDesc").value=p.descripcion;$("#pCat").value=p.categoria;$("#pPrice").value=p.precio;$("#pAct").value=p.activo?"1":"0";$("#ovProd").classList.add("open");};
-    tr.querySelector('[data-a="t"]').onclick=()=>{p.activo=!p.activo;persistCat();renderCat();};});
+    tr.querySelector('[data-a="t"]').onclick=()=>{p.activo=!p.activo;persistCat();renderCat();pushProduct(p);};});
 }
 function persistCat(){LS.set("esur_cat",CAT);}
 $("#admQ").addEventListener("input",renderCat);
@@ -690,8 +777,8 @@ $("#pCancel").onclick=()=>$("#ovProd").classList.remove("open");
 $("#pOk").onclick=()=>{
   const ref=$("#pRef").value.trim(),desc=$("#pDesc").value.trim(),pr=Math.round(Number($("#pPrice").value));
   if(!ref||!desc||!(pr>=0)){toast("Completa referencia, descripción y precio ≥ 0","err");return;}
-  if(prodEditId)Object.assign(CAT.find(p=>p.id===prodEditId),{referencia:ref,descripcion:desc,categoria:$("#pCat").value,precio:pr,activo:$("#pAct").value==="1"});
-  else CAT.push({id:"p"+Date.now(),referencia:ref,descripcion:desc,categoria:$("#pCat").value,precio:pr,unidad:"c/u",activo:true,tags:""});
+  if(prodEditId){const item=CAT.find(p=>p.id===prodEditId);Object.assign(item,{referencia:ref,descripcion:desc,categoria:$("#pCat").value,precio:pr,activo:$("#pAct").value==="1"});pushProduct(item);}
+  else{const item={id:"p"+Date.now(),referencia:ref,descripcion:desc,categoria:$("#pCat").value,precio:pr,unidad:"c/u",activo:true,tags:"",pending:true};CAT.push(item);pushProduct(item);}
   persistCat();renderCat();$("#ovProd").classList.remove("open");toast("Catálogo actualizado","ok");
 };
 $("#btnResetCat").onclick=()=>{if(!confirm("¿Restablecer catálogo demo del Excel?"))return;CAT=structuredClone(DEMO_CAT);persistCat();renderCat();};
@@ -703,7 +790,7 @@ $("#fileImport").addEventListener("change",e=>{
   const f=e.target.files[0];if(!f)return;const r=new FileReader();
   r.onload=()=>{try{
     const lines=String(r.result).split(/\r?\n/).filter(Boolean);lines.shift();
-    let n=0;lines.forEach(ln=>{const m=ln.match(/^([^,]+),"(.*)",(\d+),?(.*)$/)||ln.match(/^([^,]+),([^,]+),(\d+),?(.*)$/);if(!m)return;const [,ref,desc,pr,cat]=m;CAT.push({id:"p"+Date.now()+n,referencia:ref.trim(),descripcion:desc.trim(),precio:Math.round(+pr),categoria:(cat||"Materiales").trim(),unidad:"c/u",activo:true,tags:""});n++;});
+    let n=0;lines.forEach(ln=>{const m=ln.match(/^([^,]+),"(.*)",(\d+),?(.*)$/)||ln.match(/^([^,]+),([^,]+),(\d+),?(.*)$/);if(!m)return;const [,ref,desc,pr,cat]=m;const item={id:"p"+Date.now()+n,referencia:ref.trim(),descripcion:desc.trim(),precio:Math.round(+pr),categoria:(cat||"Materiales").trim(),unidad:"c/u",activo:true,tags:"",pending:true};CAT.push(item);pushProduct(item);n++;});
     persistCat();renderCat();toast(n+" productos importados","ok");
   }catch{toast("No se pudo importar el archivo","err");}};
   r.readAsText(f);e.target.value="";
@@ -712,7 +799,7 @@ function renderCfg(){$("#cfgIva").value=CFG.iva;$("#cfgMon").value=CFG.moneda;$(
 $("#btnSaveCfg").onclick=()=>{
   const iva=Number($("#cfgIva").value);if(!(iva>=0&&iva<=100)){toast("IVA debe estar entre 0 y 100","err");return;}
   CFG={iva,moneda:$("#cfgMon").value,empresa:$("#cfgEmp").value,direccion:$("#cfgDir").value,telefono:$("#cfgTel").value,email:$("#cfgMail").value,tipos:$("#cfgTipos").value.split("\n").map(s=>s.trim()).filter(Boolean),condiciones:$("#cfgCond").value};
-  LS.set("esur_cfg",CFG);Q.ivaPct=CFG.iva;renderCfg();renderHead();renderSummary();toast("Configuración guardada","ok");
+  LS.set("esur_cfg",CFG);Q.ivaPct=CFG.iva;renderCfg();renderHead();renderSummary();syncConfigToServer();toast("Configuración guardada","ok");
 };
 /* ---------- Navegación ---------- */
 function switchView(v){$$("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.view===v?"true":"false"));$$(".view").forEach(s=>s.classList.toggle("active",s.id==="view-"+v));if(v==="historial")renderHistory();if(v==="admin"){renderCat();renderCfg();}window.scrollTo({top:0});}
@@ -730,6 +817,7 @@ document.addEventListener("keydown",e=>{
   Q=draft&&draft.lineas?draft:blankQuote();
   if(!Q.ivaPct)Q.ivaPct=CFG.iva;
   renderAll();renderHistory();markDirty(!!draft);
+  bootSync(); // hidrata desde Neon si hay API; si no, sigue 100% local
   // Verificación determinista del ejemplo del requerimiento §31:
   try{const t=[{precio_unitario:35500,cantidad:2,total:0},{precio_unitario:50000,cantidad:1,total:0},{precio_unitario:23000,cantidad:1,total:0}];const qq={lineas:t,ivaPct:19};const c=calc(qq);console.assert(c.neto===144000&&c.iva===27360&&c.total===171360,"Regla §31 OK",c);
   // Verificación búsqueda inteligente (punto 6):

@@ -562,6 +562,7 @@ async function syncSaveToServer(rec){
     const r=rec.srv_id?await sapi("/api/quotes?id="+encodeURIComponent(rec.srv_id),"PUT",payloadOf(Q,firma))
                       :await sapi("/api/quotes","POST",payloadOf(Q,firma));
     rec.srv_id=r.srv_id;rec.numero=String(r.numero);rec.neto=r.neto;rec.iva=r.iva;rec.total=r.total;rec.ivaPct=r.ivaPct;
+    const sn=parseInt(r.numero)||0;if(sn>=SEQ){SEQ=sn+1;LS.set("esur_seq",SEQ);}
     if(Q.id===rec.id)Q.numero=rec.numero;
     LS.set("esur_quotes",QUOTES);renderHead();renderSummary();renderHistory();
     $("#saveNote").textContent="Guardada en Neon "+new Date().toLocaleString("es-CL")+" · Nº "+rec.numero;
@@ -595,9 +596,13 @@ async function syncConfigToServer(){
 }
 
 let Q=null;
+/* Folios: el número se RESERVA al duplicar/crear y se reasigna al guardar si
+   colisiona. El servidor (secuencia Postgres) manda al sincronizar. */
+function maxFolio(){let m=110325;QUOTES.forEach(q=>{const n=parseInt(q.numero)||0;if(n>m)m=n;});const s=parseInt(LS.get("esur_seq",SEQ))||0;if(s>m)m=s;return m;}
+function reserveFolio(){const n=maxFolio()+1;SEQ=n;LS.set("esur_seq",n);return String(n);}
 function blankQuote(){
   SEQ=LS.get("esur_seq",110326);
-  return {id:"q"+Date.now(),numero:String(SEQ),fecha:todayISO(),cliente:"",empresa:"",contacto:"",email:"",telefono:"",direccion:"",proyecto:"",tipo_tablero:CFG.tipos[0]||"",estado:"Borrador",vendedor:"Mario Castillo Rubilar",obs:"",lineas:[],firma:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString(),ivaPct:CFG.iva};
+  return {id:"q"+Date.now(),numero:String(Math.max(maxFolio(),SEQ)),fecha:todayISO(),cliente:"",empresa:"",contacto:"",email:"",telefono:"",direccion:"",proyecto:"",tipo_tablero:CFG.tipos[0]||"",estado:"Borrador",vendedor:"Mario Castillo Rubilar",obs:"",lineas:[],firma:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString(),ivaPct:CFG.iva};
 }
 function calc(q){
   // Regla de negocio (determinista, entera CLP — espejo backend):
@@ -749,7 +754,8 @@ function save(silent){
   Q.updated_at=new Date().toISOString();Q.firma=sigDrawn?$("#sigCanvas").toDataURL("image/png"):Q.firma;
   const rec=serverRecalc(Q);
   const i=QUOTES.findIndex(x=>x.id===rec.id);
-  if(i>=0)QUOTES[i]=structuredClone(rec);else{QUOTES.unshift(structuredClone(rec));SEQ=Math.max(SEQ,parseInt(rec.numero||"0")+1);LS.set("esur_seq",SEQ);}
+  if(i>=0)QUOTES[i]=structuredClone(rec);
+  else{rec.numero=reserveFolio();if(Q.id===rec.id){Q.numero=rec.numero;renderHead();}QUOTES.unshift(structuredClone(rec));}
   LS.set("esur_quotes",QUOTES);editingId=rec.id;markDirty(false);
   syncSaveToServer(rec);
   renderHistory();$("#saveNote").textContent="Guardada "+new Date().toLocaleString("es-CL")+" · Nº "+rec.numero;
@@ -762,7 +768,7 @@ $("#btnNew").onclick=()=>{if(dirty&&!confirm("Hay cambios sin guardar. ¿Crear n
 $("#btnDup").onclick=()=>duplicateCurrent();
 $("#btnGoNew").onclick=()=>{switchView("nueva");$("#btnNew").click();};
 function duplicateCurrent(){
-  const n={...structuredClone(Q),id:"q"+Date.now(),numero:String(LS.get("esur_seq",SEQ)),fecha:todayISO(),estado:"Borrador",created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+  const n={...structuredClone(Q),id:"q"+Date.now(),numero:reserveFolio(),fecha:todayISO(),estado:"Borrador",created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
   n.lineas.forEach(l=>l.id="l"+Date.now()+Math.floor(Math.random()*9999));
   delete n.srv_id;
   Q=n;editingId=null;markDirty(true);renderAll();toast("Duplicada como Nº "+Q.numero+" (Borrador)","ok");switchView("nueva");
@@ -827,7 +833,7 @@ function renderHistory(){
   [...$("#hbody").querySelectorAll("tr")].forEach((tr,i)=>{
     const x=list[i];if(!x)return;const b=a=>tr.querySelector(`[data-a="${a}"]`);
     b("ver").onclick=async()=>{await ensureLines(x);Q=structuredClone(x);editingId=x.id;if(Q.firma){const im=new Image();im.onload=()=>{sigClear();ctx.drawImage(im,0,0,cv.width,cv.height);sigDrawn=true;};im.src=Q.firma;}else sigClear();markDirty(false);renderAll();switchView("nueva");};
-    b("dup").onclick=()=>{Q={...structuredClone(x),id:"q"+Date.now(),numero:String(LS.get("esur_seq",SEQ)),fecha:todayISO(),estado:"Borrador"};delete Q.srv_id;editingId=null;markDirty(true);renderAll();switchView("nueva");toast("Duplicada como Nº "+Q.numero,"ok");};
+    b("dup").onclick=()=>{Q={...structuredClone(x),id:"q"+Date.now(),numero:reserveFolio(),fecha:todayISO(),estado:"Borrador"};delete Q.srv_id;editingId=null;markDirty(true);renderAll();switchView("nueva");toast("Duplicada como Nº "+Q.numero,"ok");};
     b("pdf").onclick=async()=>{await ensureLines(x);Q=structuredClone(x);renderAll();doPDF();};
     b("wa").onclick=async()=>{await ensureLines(x);Q=structuredClone(x);renderAll();switchView("nueva");showWA();};
     b("del").onclick=()=>askConfirm("Eliminar cotización","¿Eliminar definitivamente la cotización Nº "+x.numero+"?",()=>{QUOTES=QUOTES.filter(y=>y.id!==x.id);LS.set("esur_quotes",QUOTES);if(SRV.ok&&x.srv_id)sapi("/api/quotes?id="+encodeURIComponent(x.srv_id),"DELETE").catch(()=>{});renderHistory();toast("Cotización eliminada");});

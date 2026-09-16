@@ -521,7 +521,7 @@ async function sapi(path,method,body){
 }
 function payloadOf(q,firma){
   return {cliente:{nombre:q.cliente,empresa:q.empresa,contacto:q.contacto,email:q.email,telefono:q.telefono,direccion:q.direccion},
-    proyecto:q.proyecto,tipo_tablero:q.tipo_tablero,estado:q.estado,vendedor:q.vendedor,obs:q.obs||"",
+    numero:q.numero,proyecto:q.proyecto,tipo_tablero:q.tipo_tablero,estado:q.estado,vendedor:q.vendedor,obs:q.obs||"",
     firma:firma===undefined?q.firma:firma,fecha:q.fecha,
     lineas:q.lineas.map(l=>{const m=String(l.producto_id||"").match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
       return {producto_id:m?m[0]:null,referencia:l.referencia||"",descripcion:l.descripcion,precio_unitario:l.precio_unitario,cantidad:l.cantidad,categoria:l.categoria||"Materiales"};})};
@@ -758,7 +758,12 @@ function save(silent){
   const rec=serverRecalc(Q);
   const i=QUOTES.findIndex(x=>x.id===rec.id);
   if(i>=0)QUOTES[i]=structuredClone(rec);
-  else{rec.numero=reserveFolio();if(Q.id===rec.id){Q.numero=rec.numero;renderHead();}QUOTES.unshift(structuredClone(rec));}
+  else{
+    // Solo se reserva folio nuevo si falta o colisiona (evita saltos).
+    if(!rec.numero||QUOTES.some(x=>x.numero===rec.numero))rec.numero=reserveFolio();
+    if(Q.id===rec.id){Q.numero=rec.numero;renderHead();}
+    QUOTES.unshift(structuredClone(rec));
+  }
   LS.set("esur_quotes",QUOTES);editingId=rec.id;markDirty(false);
   syncSaveToServer(rec);
   renderHistory();$("#saveNote").textContent="Guardada "+new Date().toLocaleString("es-CL")+" · Nº "+rec.numero;

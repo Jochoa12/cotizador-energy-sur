@@ -105,6 +105,36 @@ function bad(msg) {
   return e;
 }
 
+// Inserta la cotización honrando el folio reservado por el cliente (evita
+// saltos: un solo número por factura). Si el folio ya existe (colisión real),
+// cae a la secuencia. Tras usar un folio explícito se adelanta la secuencia.
+async function insertQuote(s, q) {
+  const wanted = parseInt(q.numero) || 0;
+  if (wanted > 0) {
+    try {
+      const ins = await s`INSERT INTO quotes
+        (number, client_id, project, board_type_id, status, salesperson, observations, signature_png, iva_pct, issue_date)
+        VALUES (${String(wanted)}, ${q.clientId}, ${q.proyecto}, ${q.bId}, ${q.estado},
+                ${q.vendedor}, ${q.obs}, ${q.firma}, ${q.ivaPct},
+                COALESCE(${q.fecha || null}::date, CURRENT_DATE))
+        RETURNING id`;
+      await s`SELECT setval('quote_number_seq',
+        GREATEST((SELECT last_value FROM quote_number_seq), ${wanted}))`;
+      return ins[0].id;
+    } catch (e) {
+      const m = String((e && e.message) || '') + ' ' + String(e && e.code);
+      if (!/duplicate|unique|23505/i.test(m)) throw e;
+    }
+  }
+  const ins = await s`INSERT INTO quotes
+    (client_id, project, board_type_id, status, salesperson, observations, signature_png, iva_pct, issue_date)
+    VALUES (${q.clientId}, ${q.proyecto}, ${q.bId}, ${q.estado},
+            ${q.vendedor}, ${q.obs}, ${q.firma}, ${q.ivaPct},
+            COALESCE(${q.fecha || null}::date, CURRENT_DATE))
+    RETURNING id`;
+  return ins[0].id;
+}
+
 module.exports = async (req, res) => {
   try {
     const s = sql();
@@ -154,13 +184,11 @@ module.exports = async (req, res) => {
       let qid;
       if (req.method === 'POST') {
         const fecha = String(b.fecha || '').trim();
-        const ins = await s`INSERT INTO quotes
-          (client_id, project, board_type_id, status, salesperson, observations, signature_png, iva_pct, issue_date)
-          VALUES (${clientId}, ${String(b.proyecto || '')}, ${bId}, ${estado},
-                  ${String(b.vendedor || '')}, ${String(b.obs || '')}, ${b.firma || null}, ${ivaPct},
-                  COALESCE(${fecha || null}::date, CURRENT_DATE))
-          RETURNING id`;
-        qid = ins[0].id;
+        qid = await insertQuote(s, {
+          numero: b.numero, clientId, proyecto: String(b.proyecto || ''), bId, estado,
+          vendedor: String(b.vendedor || ''), obs: String(b.obs || ''),
+          firma: b.firma || null, ivaPct, fecha
+        });
         try {
           await insertLines(s, qid, lines);
         } catch (e) {

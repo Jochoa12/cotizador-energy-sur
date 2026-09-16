@@ -275,7 +275,7 @@ body.locked nav.tabs,body.locked .dirty{display:none!important}
           <div class="fgrid">
             <label class="fl span3">Observaciones<textarea id="fObs" placeholder="Validez oferta, plazos, notas técnicas…"></textarea></label>
             <label class="fl span3">Firma digital (técnico / vendedor)<canvas class="sig" id="sigCanvas" width="600" height="160"></canvas>
-              <span class="row"><button class="btn btn-ghost btn-sm" id="btnSigClear" type="button">Limpiar firma</button><span class="note">La firma se incluye en el PDF impreso.</span></span>
+              <span class="row"><button class="btn btn-ghost btn-sm" id="btnSigClear" type="button">Limpiar firma</button><label class="note" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="useDefSig" checked style="width:18px;height:18px"> Usar firma registrada <img src="images/FirmaMarioCastillo.png" alt="Firma registrada" style="height:32px" onerror="this.style.display='none'"></label></span>
             </label>
           </div>
         </div>
@@ -558,7 +558,7 @@ async function bootSync(){
 async function syncSaveToServer(rec){
   if(!SRV.ok)return;
   try{
-    const firma=sigDrawn?cv.toDataURL("image/png"):Q.firma;
+    const firma=currentSigSrc();
     const r=rec.srv_id?await sapi("/api/quotes?id="+encodeURIComponent(rec.srv_id),"PUT",payloadOf(Q,firma))
                       :await sapi("/api/quotes","POST",payloadOf(Q,firma));
     rec.srv_id=r.srv_id;rec.numero=String(r.numero);rec.neto=r.neto;rec.iva=r.iva;rec.total=r.total;rec.ivaPct=r.ivaPct;
@@ -624,6 +624,7 @@ function renderHead(){
   $("#fCliente").value=Q.cliente;$("#fEmpresa").value=Q.empresa;$("#fContacto").value=Q.contacto;
   $("#fEmail").value=Q.email;$("#fTelefono").value=Q.telefono;$("#fDireccion").value=Q.direccion;
   $("#fProyecto").value=Q.proyecto;$("#fVendedor").value=Q.vendedor||"";$("#fObs").value=Q.obs||"";
+  $("#useDefSig").checked=Q.useDefaultSig!==false;
 }
 function lineRow(l,i){
   const tr=document.createElement("tr");tr.draggable=true;tr.dataset.id=l.id;
@@ -751,7 +752,9 @@ function validate(){
 function serverRecalc(q){const c=calc(q);return {...q,neto:c.neto,iva:c.iva,total:c.total};} // espejo backend: recalcular en servidor, no confiar en frontend
 function save(silent){
   if(!validate())return false;
-  Q.updated_at=new Date().toISOString();Q.firma=sigDrawn?$("#sigCanvas").toDataURL("image/png"):Q.firma;
+  Q.updated_at=new Date().toISOString();
+  const cb=document.getElementById("useDefSig");Q.useDefaultSig=cb?cb.checked:true;
+  Q.firma=currentSigSrc();
   const rec=serverRecalc(Q);
   const i=QUOTES.findIndex(x=>x.id===rec.id);
   if(i>=0)QUOTES[i]=structuredClone(rec);
@@ -775,6 +778,18 @@ function duplicateCurrent(){
 }
 /* ---------- Firma digital ---------- */
 const cv=$("#sigCanvas"),ctx=cv.getContext("2d");let drawing=false;
+/* Firma registrada: si no hay trazo manual se usa images/FirmaMarioCastillo.png.
+   Se guarda como ruta (no base64) para no inflar localStorage/DB. */
+const DEFAULT_SIG="images/FirmaMarioCastillo.png";
+function currentSigSrc(){
+  if(sigDrawn)return cv.toDataURL("image/png");
+  const f=Q&&Q.firma;
+  if(f&&f.startsWith("data:"))return f;
+  if(f===DEFAULT_SIG)return f;
+  const cb=document.getElementById("useDefSig");
+  if(cb&&cb.checked)return DEFAULT_SIG;
+  return null;
+}
 function sigPos(e){const r=cv.getBoundingClientRect();const t=e.touches?.[0]||e;return [(t.clientX-r.left)*(cv.width/r.width),(t.clientY-r.top)*(cv.height/r.height)];}
 function sigClear(){ctx.clearRect(0,0,cv.width,cv.height);sigDrawn=false;}
 cv.addEventListener("pointerdown",e=>{drawing=true;ctx.lineWidth=2.5;ctx.lineCap="round";ctx.strokeStyle="#111";const [x,y]=sigPos(e);ctx.beginPath();ctx.moveTo(x,y);cv.setPointerCapture(e.pointerId);});
@@ -784,6 +799,8 @@ $("#btnSigClear").onclick=sigClear;
 /* ---------- PDF / impresión ---------- */
 function buildPrint(){
   const {neto,iva,total}=calc(Q);
+  const sigSrc=currentSigSrc();
+  const sigHtml=sigSrc?`<img src="${sigSrc}" style="max-height:90px" alt="Firma" onerror="this.style.display='none'"><br>`:`<br><br>`;
   const rows=Q.lineas.map((l,i)=>`<tr><td>${i+1}</td><td>${esc(l.referencia||"—")}</td><td>${esc(l.descripcion)}<br><small>${esc(l.categoria||"")}</small></td><td style="text-align:right">${money(l.precio_unitario)}</td><td style="text-align:center">${l.cantidad}</td><td style="text-align:right"><b>${money(l.total)}</b></td></tr>`).join("");
   $("#printArea").innerHTML=`<div class="doc">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;border-bottom:3px solid #111;padding-bottom:10px">
@@ -797,7 +814,7 @@ function buildPrint(){
     <div style="text-align:right;margin-top:10px;font-size:14px"><p>NETO: <b>${money(neto)}</b></p><p>IVA ${esc(String(Q.ivaPct??CFG.iva))}%: <b>${money(iva)}</b></p><p style="font-size:20px">TOTAL: <b>${money(total)}</b></p></div>
     ${Q.obs?`<p><b>Observaciones:</b><br>${esc(Q.obs).replace(/\n/g,"<br>")}</p>`:""}
     <p><b>Condiciones comerciales:</b><br>${esc(CFG.condiciones).replace(/\n/g,"<br>")}</p>
-    <div style="display:flex;gap:30px;margin-top:26px"><div style="flex:1;text-align:center">${Q.firma||sigDrawn?`<img src="${Q.firma||cv.toDataURL()}" style="max-height:90px"><br>`:`<br><br>`}_________________________<br><b>${esc(Q.vendedor||CFG.empresa)}</b><br><small>Firma técnico / vendedor</small></div>
+    <div style="display:flex;gap:30px;margin-top:26px"><div style="flex:1;text-align:center">${sigHtml}_________________________<br><b>${esc(Q.vendedor||CFG.empresa)}</b><br><small>Firma técnico / vendedor</small></div>
     <div style="flex:1;text-align:center"><br><br>_________________________<br><b>Firma cliente</b><br><small>Nombre / RUT / Fecha</small></div></div>
   </div>`;
 }

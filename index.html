@@ -6,7 +6,7 @@
 <title>Energy Sur SpA · Sistema de Cotización de Tableros</title>
 <meta name="description" content="Sistema profesional de cotización de tableros eléctricos — Energy Sur SpA.">
 <meta name="theme-color" content="#0B1220">
-<link rel="icon" type="image/png" href="images/logo.png">
+<link rel="icon" type="image/png" href="images/logo3.png">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -157,7 +157,7 @@ body.locked nav.tabs,body.locked .dirty{display:none!important}
 <body class="locked">
 <header class="appbar">
   <div class="appbar-in">
-    <div class="brand"><img class="brand-logo" src="images/logo.png" alt="Logo Energy Sur SpA" onerror="this.style.display='none'"><div><b>Energy Sur SpA</b><small>COTIZADOR · TABLEROS</small></div></div>
+    <div class="brand"><img class="brand-logo" src="images/logo3.png" alt="Logo Energy Sur SpA" onerror="this.style.display='none'"><div><b>Energy Sur SpA</b><small>COTIZADOR · TABLEROS</small></div></div>
     <nav class="tabs" role="tablist" aria-label="Secciones">
       <button role="tab" data-view="nueva" aria-selected="true">＋ Nueva cotización</button>
       <button role="tab" data-view="historial" aria-selected="false">🗂 Cotizaciones <span id="countBadge"></span></button>
@@ -173,7 +173,7 @@ body.locked nav.tabs,body.locked .dirty{display:none!important}
 
 <div id="authGate">
   <div class="login-card">
-    <img src="images/logo.png" alt="Energy Sur SpA" onerror="this.style.display='none'">
+    <img src="images/logo3.png" alt="Energy Sur SpA" onerror="this.style.display='none'">
     <h1>Cotizador Energy Sur</h1>
     <p class="hint" id="authSub">Ingresa para continuar</p>
     <div id="paneLogin" class="fgrid" style="grid-template-columns:1fr">
@@ -809,7 +809,7 @@ function buildPrint(){
   const rows=Q.lineas.map((l,i)=>`<tr><td>${i+1}</td><td>${esc(l.referencia||"—")}</td><td>${esc(l.descripcion)}<br><small>${esc(l.categoria||"")}</small></td><td style="text-align:right">${money(l.precio_unitario)}</td><td style="text-align:center">${l.cantidad}</td><td style="text-align:right"><b>${money(l.total)}</b></td></tr>`).join("");
   $("#printArea").innerHTML=`<div class="doc">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;border-bottom:3px solid #111;padding-bottom:10px">
-      <div style="display:flex;gap:12px;align-items:center"><img src="images/logo.png" style="height:54px" alt="Energy Sur SpA"><div><h1 style="font-size:20px">${esc(CFG.empresa)}</h1><p>${esc(CFG.direccion)}<br>Fono: ${esc(CFG.telefono)} · ${esc(CFG.email)}</p></div></div>
+      <div style="display:flex;gap:12px;align-items:center"><img src="images/logo3.png" style="height:54px" alt="Energy Sur SpA"><div><h1 style="font-size:20px">${esc(CFG.empresa)}</h1><p>${esc(CFG.direccion)}<br>Fono: ${esc(CFG.telefono)} · ${esc(CFG.email)}</p></div></div>
       <div style="text-align:right"><h2 style="font-size:18px">COTIZACIÓN Nº ${esc(Q.numero)}</h2><p>Fecha: ${esc(Q.fecha)}<br>Estado: ${esc(Q.estado)}<br>Tipo tablero: ${esc(Q.tipo_tablero)}</p></div>
     </div>
     <p style="margin:10px 0"><b>Cliente:</b> ${esc(Q.cliente)} ${esc(Q.empresa?"· "+Q.empresa:"")}<br>

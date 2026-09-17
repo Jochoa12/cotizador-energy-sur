@@ -862,7 +862,22 @@ function buildPrint(){
     <div class="p-foot"><span>${esc(CFG.empresa)} · ${esc(CFG.telefono)} · ${esc(CFG.email)}</span><span>Cotización Nº ${esc(Q.numero)} · ${esc(Q.fecha)}</span></div>
   </div>`;
 }
-function doPDF(){buildPrint();window.print();}
+async function doPDF(){
+  buildPrint();
+  // Esperar imágenes del documento (logo, firma) antes de capturar la
+  // impresión; si no, el PDF sale con el logo en blanco.
+  try{await document.fonts.ready;}catch(e){}
+  const imgs=[...document.querySelectorAll("#printArea img")];
+  await Promise.all(imgs.map(img=>{
+    if(img.complete&&img.naturalWidth>0)return Promise.resolve();
+    return new Promise(res=>{
+      const t=setTimeout(res,3000);
+      img.onload=()=>{clearTimeout(t);res();};
+      img.onerror=()=>{clearTimeout(t);res();};
+    });
+  }));
+  window.print();
+}
 function openPreview(){buildPrint();document.body.classList.add("preview");}
 function closePreview(){document.body.classList.remove("preview");}
 ["btnPreview","btnPreview2"].forEach(id=>{const b=document.getElementById(id);if(b)b.onclick=openPreview;});

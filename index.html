@@ -587,18 +587,29 @@ async function bootSync(){
     toast("Neon conectado · datos sincronizados","ok");
   }catch(e){SRV.ok=false;}
 }
+/* Sync serializado por cotización: evita POST duplicados (doble clic o
+   guardados seguidos) que crearían facturas gemelas y quemarían folios. */
+const syncChains={};
 async function syncSaveToServer(rec){
   if(!SRV.ok)return;
-  try{
-    const firma=currentSigSrc();
-    const r=rec.srv_id?await sapi("/api/quotes?id="+encodeURIComponent(rec.srv_id),"PUT",payloadOf(Q,firma))
-                      :await sapi("/api/quotes","POST",payloadOf(Q,firma));
-    rec.srv_id=r.srv_id;rec.numero=String(r.numero);rec.neto=r.neto;rec.iva=r.iva;rec.total=r.total;rec.ivaPct=r.ivaPct;
-    const sn=parseInt(r.numero)||0;if(sn>=SEQ){SEQ=sn+1;LS.set("esur_seq",SEQ);}
-    if(Q.id===rec.id)Q.numero=rec.numero;
-    LS.set("esur_quotes",QUOTES);renderHead();renderSummary();renderHistory();
-    $("#saveNote").textContent="Guardada en Neon "+new Date().toLocaleString("es-CL")+" · Nº "+rec.numero;
-  }catch(e){toast("Guardada local · Neon no disponible","err");}
+  const id=rec.id;
+  const payload=payloadOf(Q,currentSigSrc()); // foto del momento de guardar
+  const run=async()=>{
+    try{
+      const entry=QUOTES.find(x=>x.id===id);
+      if(!entry&&Q.id!==id)return; // se eliminó mientras esperaba: no crear huérfanos
+      const srv=(entry&&entry.srv_id)||rec.srv_id;
+      const r=srv?await sapi("/api/quotes?id="+encodeURIComponent(srv),"PUT",payload)
+                 :await sapi("/api/quotes","POST",payload);
+      const target=entry||rec;
+      target.srv_id=r.srv_id;target.numero=String(r.numero);target.neto=r.neto;target.iva=r.iva;target.total=r.total;target.ivaPct=r.ivaPct;
+      if(Q.id===id){Q.srv_id=r.srv_id;Q.numero=String(r.numero);Q.neto=r.neto;Q.iva=r.iva;Q.total=r.total;Q.ivaPct=r.ivaPct;
+        renderHead();renderSummary();$("#saveNote").textContent="Guardada en Neon "+new Date().toLocaleString("es-CL")+" · Nº "+target.numero;}
+      const sn=parseInt(r.numero)||0;if(sn>=SEQ){SEQ=sn+1;LS.set("esur_seq",SEQ);}
+      LS.set("esur_quotes",QUOTES);renderHistory();
+    }catch(e){toast("Guardada local · Neon no disponible","err");}
+  };
+  syncChains[id]=(syncChains[id]||Promise.resolve()).then(run,run);
 }
 async function ensureLines(x){
   if((!x.lineas||!x.lineas.length)&&SRV.ok&&x.srv_id){
@@ -798,8 +809,11 @@ function save(silent){
   }
   LS.set("esur_quotes",QUOTES);editingId=rec.id;markDirty(false);
   syncSaveToServer(rec);
-  renderHistory();$("#saveNote").textContent="Guardada "+new Date().toLocaleString("es-CL")+" · Nº "+rec.numero;
+  renderHistory();
   if(!silent)toast("Cotización Nº "+rec.numero+" guardada correctamente","ok");
+  // Limpiar campos y detalle para la siguiente cotización.
+  Q=blankQuote();editingId=null;sigClear();markDirty(false);renderAll();
+  $("#saveNote").textContent="Guardada Nº "+rec.numero+" · formulario listo para nueva cotización";
   return true;
 }
 let autoT=null;function autosave(){clearTimeout(autoT);autoT=setTimeout(()=>{if(!dirty)return;try{Q.updated_at=new Date().toISOString();LS.set("esur_draft",Q);$("#saveNote").textContent="Borrador autoguardado "+new Date().toLocaleTimeString("es-CL");}catch{}},1200);}

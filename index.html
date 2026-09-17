@@ -119,17 +119,47 @@ tr[draggable="true"]{cursor:grab}
 .toast.ok{border-color:var(--greenW)}.toast.err{border-color:var(--red)}
 /* signature */
 canvas.sig{width:100%;height:160px;border:2px dashed #94A3B8;border-radius:12px;background:#fff;touch-action:none}
-/* print / PDF */
+/* print / PDF + vista previa en pantalla */
 #printArea{display:none}
+#printArea .doc{max-width:800px;margin:0 auto;color:#111;font-size:12px;line-height:1.45;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+#printArea .p-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;border-bottom:3px solid #111;padding-bottom:10px}
+#printArea .p-brand{display:flex;gap:12px;align-items:center}
+#printArea .p-brand img{height:56px}
+#printArea .p-brand h1{font-size:19px;margin:0}
+#printArea .p-co{font-size:11px;color:#333}
+#printArea .p-folio{border:2px solid #111;border-radius:8px;padding:8px 14px;text-align:center;min-width:190px;font-size:12px}
+#printArea .p-folio b{font-size:16px}
+#printArea table.p-grid{width:100%;border:0;margin:10px 0;border-collapse:collapse}
+#printArea table.p-grid td{border:0;padding:3px 8px 3px 0;vertical-align:top;font-size:12px}
+#printArea table.p-grid td.k{font-weight:700;white-space:nowrap;width:112px;color:#333}
+#printArea table.items{width:100%;border-collapse:collapse;margin-top:6px}
+#printArea table.items th,#printArea table.items td{border:1px solid #333;padding:6px 8px;text-align:left;font-size:12px}
+#printArea table.items th{background:#eee}
+#printArea table.items td.c{text-align:center}
+#printArea table.items td.r{text-align:right}
+#printArea thead{display:table-header-group}
+#printArea .p-totals{width:270px;margin-left:auto;margin-top:10px;border:2px solid #111;border-radius:8px;overflow:hidden}
+#printArea .p-totals .r{display:flex;justify-content:space-between;padding:6px 10px;font-size:12px}
+#printArea .p-totals .t{background:#111;color:#fff;font-weight:900;font-size:15px}
+#printArea .p-box{border:1px solid #666;border-radius:8px;padding:8px 10px;margin-top:10px;font-size:11px}
+/* Firmas: celdas de igual alto; el área de firma es fija (104px) para que
+   ambas líneas de firma queden exactamente al mismo nivel. */
+#printArea table.sigs{width:100%;border:0;margin-top:30px;border-collapse:collapse}
+#printArea table.sigs td{border:0;text-align:center;vertical-align:top;width:50%;padding:0 24px}
+#printArea .sigbox{height:104px;display:flex;align-items:flex-end;justify-content:center}
+#printArea .sigbox img{max-height:100px;max-width:90%}
+#printArea .sigline{border-top:1px solid #111;padding-top:6px;font-size:12px}
+#printArea .p-foot{margin-top:18px;border-top:1px solid #999;padding-top:6px;font-size:10px;color:#555;display:flex;justify-content:space-between}
+@page{margin:11mm}
 @media print{
   body{background:#fff}
-  .appbar,main,#toasts,.overlay,.noprint,.floatbar{display:none!important}
-  #printArea{display:block!important;color:#111;font-size:12px}
-  #printArea .doc{max-width:800px;margin:0 auto}
-  #printArea table{width:100%;border-collapse:collapse}
-  #printArea th,#printArea td{border:1px solid #333;padding:6px 8px;text-align:left}
-  #printArea th{background:#eee}
+  .appbar,main,#toasts,.overlay,.noprint,.floatbar,#authGate{display:none!important}
+  body.preview #printArea{position:static;background:none;padding:0;overflow:visible}
+  body.preview #printArea .doc{box-shadow:none;border-radius:0;padding:0}
+  #printArea{display:block!important}
 }
+body.preview #printArea{display:block;position:fixed;inset:0;z-index:90;background:rgba(8,13,24,.72);overflow:auto;padding:22px 14px}
+body.preview #printArea .doc{background:#fff;max-width:820px;margin:0 auto;padding:34px 36px;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.4)}
 .floatbar{position:fixed;bottom:0;inset-inline:0;background:rgba(255,255,255,.96);border-top:2px solid #111;z-index:39;backdrop-filter:blur(6px)}
 .floatbar-in{max-width:1240px;margin:0 auto;padding:10px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .floatbar .tot{font-weight:900;font-size:1.1rem}
@@ -223,6 +253,7 @@ body.locked nav.tabs,body.locked .dirty{display:none!important}
         <button class="btn btn-ghost btn-sm" id="btnNew">↺ Nueva</button>
         <button class="btn btn-ghost btn-sm" id="btnDup">⧉ Duplicar</button>
         <button class="btn btn-ghost btn-sm" id="btnSave">💾 Guardar <kbd>Ctrl+G</kbd></button>
+        <button class="btn btn-ghost btn-sm" id="btnPreview">👁 Vista previa</button>
         <button class="btn btn-navy btn-sm" id="btnPDF">🖨 PDF / Imprimir</button>
         <button class="btn btn-pri btn-sm" id="btnWA">📲 Revisar y enviar WhatsApp</button>
       </div>
@@ -294,6 +325,7 @@ body.locked nav.tabs,body.locked .dirty{display:none!important}
           <div class="grid">
             <button class="btn btn-pri" id="btnSave2">💾 Guardar borrador</button>
             <button class="btn btn-green" id="btnWA2">📲 Enviar por WhatsApp</button>
+            <button class="btn btn-ghost" id="btnPreview2">👁 Vista previa</button>
             <button class="btn btn-ghost" id="btnPDF2">🖨 PDF / Imprimir</button>
           </div>
           <p class="note" id="saveNote" style="margin-top:8px">Autoguardado local activado.</p>
@@ -805,25 +837,36 @@ $("#btnSigClear").onclick=sigClear;
 function buildPrint(){
   const {neto,iva,total}=calc(Q);
   const sigSrc=currentSigSrc();
-  const sigHtml=sigSrc?`<img src="${sigSrc}" style="max-height:90px" alt="Firma" onerror="this.style.display='none'"><br>`:`<br><br>`;
-  const rows=Q.lineas.map((l,i)=>`<tr><td>${i+1}</td><td>${esc(l.referencia||"—")}</td><td>${esc(l.descripcion)}<br><small>${esc(l.categoria||"")}</small></td><td style="text-align:right">${money(l.precio_unitario)}</td><td style="text-align:center">${l.cantidad}</td><td style="text-align:right"><b>${money(l.total)}</b></td></tr>`).join("");
+  const rows=Q.lineas.map((l,i)=>`<tr><td class="c">${i+1}</td><td>${esc(l.referencia||"—")}</td><td>${esc(l.descripcion)}<br><small>${esc(l.categoria||"")}</small></td><td class="r">${money(l.precio_unitario)}</td><td class="c">${l.cantidad}</td><td class="r"><b>${money(l.total)}</b></td></tr>`).join("");
   $("#printArea").innerHTML=`<div class="doc">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;border-bottom:3px solid #111;padding-bottom:10px">
-      <div style="display:flex;gap:12px;align-items:center"><img src="images/logo3.png" style="height:54px" alt="Energy Sur SpA"><div><h1 style="font-size:20px">${esc(CFG.empresa)}</h1><p>${esc(CFG.direccion)}<br>Fono: ${esc(CFG.telefono)} · ${esc(CFG.email)}</p></div></div>
-      <div style="text-align:right"><h2 style="font-size:18px">COTIZACIÓN Nº ${esc(Q.numero)}</h2><p>Fecha: ${esc(Q.fecha)}<br>Estado: ${esc(Q.estado)}<br>Tipo tablero: ${esc(Q.tipo_tablero)}</p></div>
+    <div class="p-head">
+      <div class="p-brand"><img src="images/logo3.png" alt="Energy Sur SpA" onerror="this.style.display='none'"><div><h1>${esc(CFG.empresa)}</h1><div class="p-co">${esc(CFG.direccion)}<br>Fono: ${esc(CFG.telefono)} · ${esc(CFG.email)}</div></div></div>
+      <div class="p-folio"><b>COTIZACIÓN Nº ${esc(Q.numero)}</b><br>Fecha: ${esc(Q.fecha)}<br>Estado: ${esc(Q.estado)}</div>
     </div>
-    <p style="margin:10px 0"><b>Cliente:</b> ${esc(Q.cliente)} ${esc(Q.empresa?"· "+Q.empresa:"")}<br>
-    <b>Contacto:</b> ${esc(Q.contacto)} · ${esc(Q.email)} · ${esc(Q.telefono)}<br>
-    <b>Proyecto:</b> ${esc(Q.proyecto)} · <b>Dirección:</b> ${esc(Q.direccion)} · <b>Cotizado por:</b> ${esc(Q.vendedor)}</p>
-    <table><thead><tr><th>#</th><th>Ref</th><th>Descripción</th><th>Valor</th><th>Cant</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table>
-    <div style="text-align:right;margin-top:10px;font-size:14px"><p>NETO: <b>${money(neto)}</b></p><p>IVA ${esc(String(Q.ivaPct??CFG.iva))}%: <b>${money(iva)}</b></p><p style="font-size:20px">TOTAL: <b>${money(total)}</b></p></div>
-    ${Q.obs?`<p><b>Observaciones:</b><br>${esc(Q.obs).replace(/\n/g,"<br>")}</p>`:""}
-    <p><b>Condiciones comerciales:</b><br>${esc(CFG.condiciones).replace(/\n/g,"<br>")}</p>
-    <div style="display:flex;gap:30px;margin-top:26px"><div style="flex:1;text-align:center">${sigHtml}_________________________<br><b>${esc(Q.vendedor||CFG.empresa)}</b><br><small>Firma técnico / vendedor</small></div>
-    <div style="flex:1;text-align:center"><br><br>_________________________<br><b>Firma cliente</b><br><small>Nombre / RUT / Fecha</small></div></div>
+    <table class="p-grid"><tr>
+      <td class="k">Cliente:</td><td>${esc(Q.cliente)}${esc(Q.empresa?" · "+Q.empresa:"")}</td>
+      <td class="k">Proyecto:</td><td>${esc(Q.proyecto||"—")}</td></tr><tr>
+      <td class="k">Contacto:</td><td>${esc(Q.contacto||"—")}${esc(Q.email?" · "+Q.email:"")}${esc(Q.telefono?" · "+Q.telefono:"")}</td>
+      <td class="k">Tablero:</td><td>${esc(Q.tipo_tablero)}</td></tr><tr>
+      <td class="k">Dirección:</td><td>${esc(Q.direccion||"—")}</td>
+      <td class="k">Cotizado por:</td><td>${esc(Q.vendedor||"")}</td></tr>
+    </table>
+    <table class="items"><thead><tr><th style="width:28px">#</th><th>Ref.</th><th>Descripción</th><th style="text-align:right">Valor</th><th style="text-align:center">Cant.</th><th style="text-align:right">Total</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="p-totals"><div class="r"><span>NETO</span><b>${money(neto)}</b></div><div class="r"><span>IVA ${esc(String(Q.ivaPct??CFG.iva))}%</span><b>${money(iva)}</b></div><div class="r t"><span>TOTAL</span><span>${money(total)}</span></div></div>
+    ${Q.obs?`<div class="p-box"><b>Observaciones:</b><br>${esc(Q.obs).replace(/\n/g,"<br>")}</div>`:""}
+    <div class="p-box"><b>Condiciones comerciales:</b><br>${esc(CFG.condiciones).replace(/\n/g,"<br>")}</div>
+    <table class="sigs"><tr>
+      <td><div class="sigbox">${sigSrc?`<img src="${sigSrc}" alt="Firma técnico" onerror="this.remove()">`:""}</div><div class="sigline"><b>${esc(Q.vendedor||CFG.empresa)}</b><br><small>Firma técnico que cotiza</small></div></td>
+      <td><div class="sigbox"></div><div class="sigline"><b>Firma cliente</b><br><small>Nombre / RUT / Fecha</small></div></td>
+    </tr></table>
+    <div class="p-foot"><span>${esc(CFG.empresa)} · ${esc(CFG.telefono)} · ${esc(CFG.email)}</span><span>Cotización Nº ${esc(Q.numero)} · ${esc(Q.fecha)}</span></div>
   </div>`;
 }
 function doPDF(){buildPrint();window.print();}
+function openPreview(){buildPrint();document.body.classList.add("preview");}
+function closePreview(){document.body.classList.remove("preview");}
+["btnPreview","btnPreview2"].forEach(id=>{const b=document.getElementById(id);if(b)b.onclick=openPreview;});
+document.getElementById("printArea").addEventListener("click",e=>{if(e.target.id==="printArea")closePreview();});
 ["btnPDF","btnPDF2","btnPDF3"].forEach(id=>document.getElementById(id).onclick=doPDF);
 $("#waPDF").onclick=doPDF;
 /* ---------- WhatsApp ---------- */
@@ -999,7 +1042,7 @@ $$("nav.tabs button").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
 document.addEventListener("keydown",e=>{
   if(e.key==="/"&&document.activeElement.tagName!=="INPUT"&&document.activeElement.tagName!=="TEXTAREA"){e.preventDefault();switchView("nueva");searchEl.focus();}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="g"){e.preventDefault();save(false);}
-  if(e.key==="Escape"){$$(".overlay").forEach(o=>o.classList.remove("open"));}
+  if(e.key==="Escape"){$$(".overlay").forEach(o=>o.classList.remove("open"));if(document.body.classList.contains("preview"))closePreview();}
 });
 /* ---------- Init ---------- */
 (function init(){
